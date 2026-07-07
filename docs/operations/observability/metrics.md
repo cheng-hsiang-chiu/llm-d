@@ -63,13 +63,14 @@ prefill-podmonitor      5m
 
 | Metric | What it measures | Why it matters |
 |--------|-----------------|----------------|
-| `sglang:num_running_reqs` | Active requests being processed | High values indicate GPU saturation; new requests will queue |
-| `sglang:num_queue_reqs` | Requests queued, waiting to be processed | Non-zero means pods are saturated. Primary signal for autoscaling decisions |
-| `sglang:token_usage` | KV cache token utilization (0.0 to 1.0) | Above 0.9 means GPU memory is nearly full |
-| `sglang:time_to_first_token_seconds` (histogram) | Time from request arrival to first generated token (TTFT) | Directly impacts user experience. Use `histogram_quantile()` to query percentiles |
-| `sglang:inter_token_latency_seconds` (histogram) | Time between consecutive generated tokens (ITL) | Affects streaming response speed. Use `histogram_quantile()` to query percentiles |
-| `sglang:prompt_tokens_total` | Total input tokens processed | Use `rate()` to get tokens/sec per pod |
-| `sglang:generation_tokens_total` | Total output tokens generated | Use `rate()` alongside prompt tokens to get total throughput |
+| `sglang_num_running_reqs` | Active requests being processed | High values indicate GPU saturation; new requests will queue |
+| `sglang_num_queue_reqs` | Requests queued, waiting to be processed | Non-zero means pods are saturated. Primary signal for autoscaling decisions |
+| `sglang_token_usage` | KV cache token utilization (0.0 to 1.0) | Above 0.9 means GPU memory is nearly full |
+| `sglang_cache_hit_rate` | Prefix cache hit rate (0.0 to 1.0) | High hit rate indicates efficient KV cache reuse |
+| `sglang_time_to_first_token_seconds` (histogram) | Time from request arrival to first generated token (TTFT) | Directly impacts user experience. Use `histogram_quantile()` to query percentiles |
+| `sglang_inter_token_latency_seconds` (histogram) | Time between consecutive generated tokens (ITL) | Affects streaming response speed. Use `histogram_quantile()` to query percentiles |
+| `sglang_prompt_tokens_total` | Total input tokens processed | Use `rate()` to get tokens/sec per pod |
+| `sglang_generation_tokens_total` | Total output tokens generated | Use `rate()` alongside prompt tokens to get total throughput |
 
 ## Step 3: Enable EPP Metrics
 

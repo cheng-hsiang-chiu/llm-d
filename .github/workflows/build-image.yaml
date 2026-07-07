@@ -92,9 +92,11 @@ jobs:
           echo "rocm=$(echo $platforms | grep -q rocm && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "xpu=$(echo $platforms | grep -q xpu && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "cpu=$(echo $platforms | grep -q cpu && echo true || echo false)" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
+
       - uses: dorny/paths-filter@v4
         if: github.event_name != 'workflow_dispatch' && inputs.force_build != true && inputs.platforms == ''
         id: filter
@@ -188,9 +190,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load version configuration from file
         id: common-version
@@ -351,9 +354,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load version configuration from file
         id: common-version
@@ -534,9 +538,10 @@ jobs:
           ls -la /tmp/digests/ubuntu/ || echo "No Ubuntu digests"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Export Git Sha
         id: export-sha
@@ -727,9 +732,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load version configuration from file
         id: common-version
@@ -895,9 +901,10 @@ jobs:
           ls -la /tmp/digests/rhel/ || echo "No RHEL digests"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Export Git Sha
         id: export-sha
@@ -1044,9 +1051,10 @@ jobs:
     runs-on: vllm-runner-arm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load version configuration from file
         id: common-version
@@ -1196,9 +1204,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load version configuration from file
         id: cuda-version
@@ -1290,9 +1299,10 @@ jobs:
     runs-on: xpu
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load vLLM XPU base image from file
         id: common-versions
@@ -1381,9 +1391,10 @@ jobs:
     runs-on: vllm-runner
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -1414,8 +1425,8 @@ jobs:
           platforms: linux/amd64
           push: true
           provenance: true
-          cache-from: type=gha,scope=rocm-dev
-          cache-to: type=gha,mode=max,scope=rocm-dev,oci-mediatypes=true,compression=zstd
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}-rocm-dev:build-cache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}-rocm-dev:build-cache,mode=max,oci-mediatypes=true, compression=zstd
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}-rocm-dev:${{ steps.set-tag.outputs.tag }}
             ${{ steps.set-tag.outputs.pr_tag != '' && format('{0}/{1}-rocm-dev:{2}', env.REGISTRY, github.repository, steps.set-tag.outputs.pr_tag) || '' }}
@@ -1459,9 +1470,10 @@ jobs:
     runs-on: vllm-runner
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || '' }}
+          allow-unsafe-pr-checkout: true
 
       - name: Load vLLM version from file
         id: common-versions
