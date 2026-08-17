@@ -1,0 +1,42 @@
+load:
+  type: constant
+  num_workers: 8
+  worker_max_concurrency: 1000
+  request_timeout: 180
+  stages:
+  - rate: 12
+    duration: 50
+  - rate: 24
+    duration: 50
+  - rate: 36
+    duration: 50
+  - rate: 48
+    duration: 50
+api:
+  type: completion
+  streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+data:
+  type: shared_prefix
+  shared_prefix:
+    seed: 1617
+    num_groups: 64            # 64 Hot Documents (3.07M tokens = 2.5x one pod's GPU cache)
+    num_prompts_per_group: 128
+    system_prompt_len: 49152   # 48K-token document prefix
+    question_len: 256          # 256-token question
+    output_len: 512            # 512-token long output (heavy decode pressure)
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace
+
