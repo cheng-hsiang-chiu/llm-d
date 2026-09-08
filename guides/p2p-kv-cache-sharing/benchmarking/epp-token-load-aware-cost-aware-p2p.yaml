@@ -1,0 +1,66 @@
+apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+# DRA + Cross-Rail RoCE Configuration:
+# Uses cost-aware analytical pull decision where cross-rail pulls operate
+# over hardware RoCE v2 with full ~350 Gbps line-rate bandwidth (low beta).
+plugins:
+- type: token-producer
+  parameters:
+    modelName: openai/gpt-oss-120b
+    vllm:
+      url: http://p2p-kv-cache-sharing-render:8000
+- type: endpoint-notification-source
+- type: precise-prefix-cache-producer
+  parameters:
+    indexerConfig:
+      kvBlockIndexConfig:
+        inMemoryConfig:
+          podCacheSize: 128
+      kvCacheBackendConfigs:
+      - name: gpu
+        weight: 1.0
+      - name: cpu
+        weight: 0.4
+    tokenProcessorConfig:
+      blockSize: 64
+    speculativeIndexing: true
+    kvEventsConfig:
+      topicFilter: "kv@"
+      discoverPods: true
+      podDiscoveryConfig:
+        socketPort: 5556
+- type: inflight-load-producer
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+- type: prefix-cache-affinity-filter
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+    inFlightLoadProducerName: inflight-load-producer
+    peakPrefillThroughput: 34241
+    maxTTFTPenaltyMs: 1000
+- type: p2p-source-producer
+  parameters:
+    prefixMatchInfoProducerName: precise-prefix-cache-producer
+    prefillProfileName: default
+    minCachedTokenDelta: 2048
+    rPeakTokensPerSec: 34241
+    maxNumBatchedTokens: 8192
+    sessionCostMs: 50
+    pullSameNodeT0Ms: 38
+    pullSameNodeBetaMsPerToken: 0.004
+    pullCrossNodeT0Ms: 40
+    pullCrossNodeBetaMsPerToken: 0.005
+- type: token-load-scorer
+- type: max-score-picker
+- type: single-profile-handler
+dataLayer:
+  sources:
+  - pluginRef: endpoint-notification-source
+    extractors:
+    - pluginRef: precise-prefix-cache-producer
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: max-score-picker
+  - pluginRef: prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
