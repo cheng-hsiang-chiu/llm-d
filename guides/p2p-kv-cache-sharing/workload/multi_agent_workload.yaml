@@ -1,0 +1,54 @@
+load:
+  type: concurrent
+  num_users: 128
+  max_requests: 2560
+  api:
+    type: completion
+    streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+data:
+  type: conversation_replay
+  conversation_replay:
+    seed: 8641
+    max_model_len: 65536
+    num_conversations: 256
+    shared_system_prompt_len: 40000
+    dynamic_system_prompt_len:
+      type: lognormal
+      min: 1000
+      max: 3000
+      mean: 2000
+      std_dev: 300
+    turns_per_conversation:
+      type: lognormal
+      min: 6
+      max: 14
+      mean: 10
+      std_dev: 2
+    input_tokens_per_turn:
+      type: lognormal
+      min: 200
+      max: 2000
+      mean: 800
+      std_dev: 400
+    output_tokens_per_turn:
+      type: lognormal
+      min: 48
+      max: 128
+      mean: 80
+      std_dev: 24
+    tool_call_latency_sec:
+      type: uniform
+      min: 2
+      max: 4
+      mean: 3
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
