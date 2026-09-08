@@ -35,10 +35,6 @@ plugins:
     inFlightLoadProducerName: inflight-load-producer
     peakPrefillThroughput: 34241
     maxTTFTPenaltyMs: 1000
-- type: p2p-source-producer
-  parameters:
-    prefixMatchInfoProducerName: precise-prefix-cache-producer
-    minCachedTokenDelta: 2048
 - type: token-load-scorer
 - type: max-score-picker
 - type: single-profile-handler
