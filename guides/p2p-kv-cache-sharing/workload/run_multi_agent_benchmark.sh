@@ -29,7 +29,7 @@ GUIDE_NAME="p2p-kv-cache-sharing"
 NAMESPACE="${NAMESPACE:-llm-d-${GUIDE_NAME}}"
 MODEL_NAME="${MODEL_NAME:-openai/gpt-oss-120b}"
 GATEWAY_CLASS="${GATEWAY_CLASS:-epponly}"
-NUM_RUNS="${NUM_RUNS:-2}"
+NUM_RUNS="${NUM_RUNS:-1}"
 START_RUN="${START_RUN:-1}"
 
 # Public Upstream EPP Router image by default (override via ROUTER_IMAGE env var if desired)
@@ -100,8 +100,8 @@ generate_workload_yaml() {
   local seed="$4"
 
   mkdir -p "$(dirname "${WORKLOAD_IN_FILE}")"
-  sed -e "s/num_users: .*/num_users: ${concurrency}/" \
-      -e "s/max_requests: .*/max_requests: ${num_requests}/" \
+  sed -e "s/concurrency_level: .*/concurrency_level: ${concurrency}/" \
+      -e "s/num_requests: .*/num_requests: ${num_requests}/" \
       -e "s/num_conversations: .*/num_conversations: ${num_convs}/" \
       -e "s/seed: .*/seed: ${seed}/" \
       "${SCRIPT_DIR}/multi_agent_workload.yaml" > "${WORKLOAD_IN_FILE}"
@@ -151,8 +151,10 @@ for arm_entry in "${ARMS[@]}"; do
       generate_workload_yaml "${cl}" "${num_requests}" "${num_convs}" "${CURRENT_SEED}"
       cp "${WORKLOAD_IN_FILE}" "${WORKLOAD_IN_FILE%.in}"
 
-      GATEWAY_SVC="$(kubectl get svc -n "${NAMESPACE}" -l app.kubernetes.io/name=llm-d-router-gateway -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${GUIDE_NAME}-router-gateway")"
-      ENDPOINT_URL="http://${GATEWAY_SVC}.${NAMESPACE}.svc.cluster.local:80"
+      until ENDPOINT_IP=$(kubectl get service "${GUIDE_NAME}-epp" -n "${NAMESPACE}" -o jsonpath='{.spec.clusterIP}' 2>/dev/null) && [ -n "${ENDPOINT_IP}" ]; do
+        sleep 2
+      done
+      ENDPOINT_URL="http://${ENDPOINT_IP}:8081"
       echo "==> Target Endpoint URL: ${ENDPOINT_URL}"
 
       OUTPUT_DIR="${RESULTS_BASE_DIR}/${arm_id}/CL_${cl}/run_${run_idx}"
