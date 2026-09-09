@@ -51,6 +51,7 @@ router:
       pullPolicy: Always
     flags:
       ha-enable-leader-election: false
+      allow-experimental-plugins: true
     env:
       - name: HF_TOKEN
         valueFrom:
@@ -82,9 +83,9 @@ router:
                     # pods, so real holders are evicted, affinity scores
                     # collapse toward zero, and p2p-source-producer stops
                     # finding a peer to pull from. Size it at
-                    # (discovered endpoints x tiers); 32 covers this guide's
-                    # 16-pod fleet with a GPU and a CPU tier per pod.
-                    podCacheSize: 32
+                    # (discovered endpoints x tiers); 128 covers this
+                    # 64-pod fleet with a GPU and a CPU tier per pod.
+                    podCacheSize: 128
                 kvCacheBackendConfigs:
                 - name: gpu
                   weight: 1.0

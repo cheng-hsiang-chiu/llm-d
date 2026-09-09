@@ -333,7 +333,7 @@ Apply the Kustomize overlay for your transport:
 ```bash
 export ACCELERATOR_TYPE=gpu   # options: gpu
 export MODEL_SERVER=vllm      # options: vllm
-export TRANSPORT=rdma         # options: rdma (recommended), base
+export TRANSPORT=roce-crossrail         # options: rdma (recommended), base
 kubectl apply -n ${NAMESPACE} -k ${REPO_ROOT}/guides/${GUIDE_NAME}/modelserver/${ACCELERATOR_TYPE}/${MODEL_SERVER}/${TRANSPORT}/
 ```
 
