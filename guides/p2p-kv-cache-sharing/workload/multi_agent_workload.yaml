@@ -1,10 +1,14 @@
 load:
   type: concurrent
-  num_users: 128
-  max_requests: 2560
-  api:
-    type: completion
-    streaming: true
+  num_workers: 8
+  worker_max_concurrency: 1000
+  request_timeout: 600
+  stages:
+  - num_requests: 2560
+    concurrency_level: 128
+api:
+  type: completion
+  streaming: true
 server:
   type: vllm
   model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
