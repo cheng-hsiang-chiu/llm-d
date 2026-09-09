@@ -1,0 +1,261 @@
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: p2p-mrdma-claim
+  namespace: llm-d-p2p-kv-cache-sharing
+spec:
+  spec:
+    devices:
+      requests:
+        - name: nic
+          exactly:
+            deviceClassName: mrdma.google.com
+            allocationMode: ExactCount
+            count: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p2p-kv-cache-sharing-decode
+  namespace: llm-d-p2p-kv-cache-sharing
+  labels:
+    llm-d.ai/accelerator-variant: gpu
+    llm-d.ai/accelerator-vendor: nvidia
+    llm-d.ai/engine-type: vllm
+    llm-d.ai/guide: p2p-kv-cache-sharing
+    llm-d.ai/model: gpt-oss-120b
+    llm-d.ai/role: decode
+spec:
+  replicas: 64
+  selector:
+    matchLabels:
+      llm-d.ai/accelerator-variant: gpu
+      llm-d.ai/accelerator-vendor: nvidia
+      llm-d.ai/engine-type: vllm
+      llm-d.ai/guide: p2p-kv-cache-sharing
+      llm-d.ai/model: gpt-oss-120b
+      llm-d.ai/role: decode
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        llm-d.ai/accelerator-variant: gpu
+        llm-d.ai/accelerator-vendor: nvidia
+        llm-d.ai/engine-type: vllm
+        llm-d.ai/guide: p2p-kv-cache-sharing
+        llm-d.ai/model: gpt-oss-120b
+        llm-d.ai/role: decode
+    spec:
+      hostIPC: true
+      serviceAccountName: p2p-kv-cache-sharing-sa
+      resourceClaims:
+        - name: rdma-nic
+          resourceClaimTemplateName: p2p-mrdma-claim
+      initContainers:
+        - name: routing-proxy
+          image: ghcr.io/llm-d/llm-d-router-disagg-sidecar:main
+          imagePullPolicy: Always
+          restartPolicy: Always
+          args:
+            - --port=8000
+            - --vllm-port=8200
+            - --kv-connector=offloading
+            - --p2p-connector-port=7777
+            - --secure-proxy=false
+          ports:
+            - containerPort: 8000
+              name: sidecar
+              protocol: TCP
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+      containers:
+        - name: modelserver
+          image: vllm/vllm-openai:v0.27.1
+          command:
+            - "sh"
+            - "-c"
+            - |
+              apt-get update -qq && apt-get install -y -qq librdmacm1 2>/dev/null
+              rm -f /dev/shm/vllm_offload_*.mmap 2>/dev/null
+              mkdir -p /model-cache/.gpu_locks
+              RAIL_ID=$(ls /sys/class/net 2>/dev/null | sed -n 's/^gpu\([0-7]\)rdma0$/\1/p' | head -1)
+              if [ -n "${RAIL_ID}" ]; then
+                LOCK_DIR="/model-cache/.gpu_locks/gpu_${RAIL_ID}.lock"
+                rm -rf "${LOCK_DIR}" 2>/dev/null || true
+                mkdir -p "${LOCK_DIR}" 2>/dev/null || true
+                echo "${HOSTNAME}" > "${LOCK_DIR}/owner"
+                CLAIMED_GPU="${RAIL_ID}"
+              else
+                CLAIMED_GPU=""
+                for attempt in $(seq 1 30); do
+                  for gpu in 0 1 2 3 4 5 6 7; do
+                    LOCK_DIR="/model-cache/.gpu_locks/gpu_${gpu}.lock"
+                    if [ -d "${LOCK_DIR}" ]; then
+                      if [ -f "${LOCK_DIR}/owner" ] && [ "$(cat "${LOCK_DIR}/owner" 2>/dev/null)" = "${HOSTNAME}" ]; then
+                        CLAIMED_GPU="${gpu}"
+                        break 2
+                      fi
+                      MEM=$(nvidia-smi --id="${gpu}" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null || echo 99999)
+                      if [ "${MEM}" -lt 1000 ]; then
+                        rm -rf "${LOCK_DIR}" 2>/dev/null || true
+                      fi
+                    fi
+                    if mkdir "${LOCK_DIR}" 2>/dev/null; then
+                      echo "${HOSTNAME}" > "${LOCK_DIR}/owner"
+                      CLAIMED_GPU="${gpu}"
+                      break 2
+                    fi
+                  done
+                  sleep 2
+                done
+              fi
+              if [ -n "${CLAIMED_GPU}" ]; then
+                export CUDA_VISIBLE_DEVICES="${CLAIMED_GPU}"
+                export UCX_NET_DEVICES="mlx5_${CLAIMED_GPU}:1"
+                echo "==> DRANET matched: GPU/Rail ${CLAIMED_GPU} -> CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}, UCX_NET_DEVICES=${UCX_NET_DEVICES}"
+              else
+                echo "==> ERROR: Failed to claim a GPU/Rail on node"
+                exit 1
+              fi
+              exec vllm serve "$@"
+            - "sh"
+          args:
+            - /model-cache/openai/gpt-oss-120b
+            - --served-model-name=openai/gpt-oss-120b
+            - --port=8200
+            - --disable-access-log-for-endpoints=/health,/metrics,/v1/models
+            - --tensor-parallel-size=1
+            - --block-size=64
+            - --max-model-len=65536
+            - --gpu-memory-utilization=0.85
+            - --kv-transfer-config
+            - '{"kv_connector":"OffloadingConnector","kv_role":"kv_both","kv_connector_extra_config":{"spec_name":"TieringOffloadingSpec","cpu_bytes_to_use":94489280512,"offload_prompt_only":false,"secondary_tiers":[{"type":"p2p","host":"$(POD_IP)","port":7777}]}}'
+            - --kv-events-config
+            - '{"enable_kv_cache_events":true,"publisher":"zmq","endpoint":"$(KV_EVENTS_ENDPOINT)","topic":"kv@$(POD_IP):$(POD_PORT)@openai/gpt-oss-120b"}'
+          ports:
+            - containerPort: 8200
+              name: http
+              protocol: TCP
+            - containerPort: 7777
+              name: p2p
+              protocol: TCP
+            - containerPort: 5556
+              name: kv-events
+              protocol: TCP
+          env:
+            - name: UCX_IB_ROCE_LOCAL_SUBNET
+              value: "n"
+            - name: UCX_IB_ROCE_REACHABILITY_MODE
+              value: "all"
+            - name: UCX_IB_GPU_DIRECT_RDMA
+              value: "y"
+            - name: UCX_IB_GDA_DMABUF_ENABLE
+              value: "y"
+            - name: UCX_TLS
+              value: "rc_mlx5,rc,cuda_copy,cuda_ipc,sm,shm,self"
+            - name: UCX_NET_DEVICES
+              value: "mlx5_0:1"
+            - name: UCX_IB_GID_INDEX
+              value: "3"
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: VLLM_P2P_SIDE_CHANNEL_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PYTHONHASHSEED
+              value: "0"
+            - name: KV_EVENTS_ENDPOINT
+              value: "tcp://*:5556"
+            - name: POD_PORT
+              value: "8000"
+            - name: DO_NOT_TRACK
+              value: "1"
+          resources:
+            limits:
+              cpu: "8"
+              memory: 160Gi
+              nvidia.com/gpu: "1"
+            claims:
+              - name: rdma-nic
+            requests:
+              cpu: "8"
+              memory: 160Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["IPC_LOCK"]
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8200
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8200
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8200
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: shm
+            - mountPath: /.cache
+              name: torch-compile-cache
+            - mountPath: /.triton
+              name: triton-cache
+            - mountPath: /.config
+              name: vllm-config
+            - mountPath: /dev/infiniband
+              name: dev-infiniband
+            - mountPath: /model-cache
+              name: host-model-cache
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 96Gi
+        - name: torch-compile-cache
+          emptyDir: {}
+        - name: triton-cache
+          emptyDir: {}
+        - name: vllm-config
+          emptyDir: {}
+        - name: dev-infiniband
+          hostPath:
+            path: /dev/infiniband
+        - name: host-model-cache
+          hostPath:
+            path: /mnt/stateful_partition/model-cache
+            type: DirectoryOrCreate
