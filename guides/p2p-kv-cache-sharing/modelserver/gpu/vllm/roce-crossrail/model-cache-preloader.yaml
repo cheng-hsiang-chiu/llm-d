@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: model-cache-preloader
+  namespace: llm-d-p2p-kv-cache-sharing
+  labels:
+    app: model-cache-preloader
+spec:
+  selector:
+    matchLabels:
+      app: model-cache-preloader
+  template:
+    metadata:
+      labels:
+        app: model-cache-preloader
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-h200-141gb
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: downloader
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -e
+              TARGET_DIR="/mnt/stateful_partition/model-cache/openai/gpt-oss-120b"
+              if [ -f "${TARGET_DIR}/model-00015-of-00015.safetensors" ] && [ -f "${TARGET_DIR}/config.json" ]; then
+                echo "Model openai/gpt-oss-120b already fully cached on this node."
+                sleep infinity
+              fi
+              echo "Downloading openai/gpt-oss-120b to ${TARGET_DIR}..."
+              mkdir -p "${TARGET_DIR}"
+              pip install --no-cache-dir huggingface_hub
+              python3 -c "
+              from huggingface_hub import snapshot_download
+              import os
+              snapshot_download(
+                  repo_id='openai/gpt-oss-120b',
+                  local_dir='${TARGET_DIR}',
+                  local_dir_use_symlinks=False,
+                  token=os.environ.get('HF_TOKEN')
+              )
+              print('Download completed successfully!')
+              "
+              sleep infinity
+          volumeMounts:
+            - name: host-cache
+              mountPath: /mnt/stateful_partition/model-cache
+      volumes:
+        - name: host-cache
+          hostPath:
+            path: /mnt/stateful_partition/model-cache
+            type: DirectoryOrCreate
