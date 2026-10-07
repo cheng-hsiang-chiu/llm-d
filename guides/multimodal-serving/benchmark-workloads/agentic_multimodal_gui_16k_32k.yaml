@@ -1,0 +1,98 @@
+# ---------------------------------------------------------------------------
+# Agentic Multimodal Workload 1A: Computer-Use / GUI Agent (16K–32K Context)
+#
+# Models a multi-step Computer-Use / Browser GUI Agent where each session
+# (shared_prefix group) carries:
+#   1. Shared Session Prefix (cached across all 8 steps of the agent trajectory):
+#      - Standing OS/browser tool definitions + accumulated trajectory history:
+#        lognormal text prefix (mean 14K tokens, range 8K–20K)
+#      - 6 x 720p cached reference/history screenshots (~6K visual tokens)
+#   2. Per-Step Fresh Tool Observation (uncached, new on every request):
+#      - 1 x 720p fresh screenshot in `data.multimodal` (~1K visual tokens)
+#      - Current step DOM/accessibility tree + prompt:
+#        lognormal text suffix (mean 1.5K tokens, range 500–3.5K)
+#   3. Agent Reasoning + Tool Call Output:
+#      - lognormal completion (mean 250 tokens, range 64–600)
+#
+# Total Prompt Length: ~22.5K tokens mean (16K–31K range), ~89% cacheable prefix.
+# Note: Ensure vLLM is launched with `--limit-mm-per-prompt '{"image": 16}'`.
+# ---------------------------------------------------------------------------
+load:
+  type: concurrent
+  num_workers: 16
+  worker_max_concurrency: 100
+  worker_max_tcp_connections: 2500
+  request_timeout: 600
+  stages:
+    - concurrency_level: 32
+      num_requests: 500
+    - concurrency_level: 64
+      num_requests: 640
+    - concurrency_level: 128
+      num_requests: 1024
+    - concurrency_level: 256
+      num_requests: 1536
+    - concurrency_level: 512
+      num_requests: 2048
+    - concurrency_level: 1000
+      num_requests: 3000
+api:
+  type: chat
+  streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+data:
+  type: shared_prefix
+  shared_prefix:
+    seed: 42
+    num_groups: 500
+    num_prompts_per_group: 8
+    system_prompt_len:
+      type: lognormal
+      min: 8000
+      max: 20000
+      mean: 14000
+      std_dev: 3000
+    question_len:
+      type: lognormal
+      min: 500
+      max: 3500
+      mean: 1500
+      std_dev: 500
+    output_len:
+      type: lognormal
+      min: 64
+      max: 600
+      mean: 250
+      std_dev: 100
+    enable_multi_turn_chat: false
+    multimodal:
+      image:
+        count: { type: fixed, min: 6, max: 6, mean: 6 }
+        insertion_point: 0.0
+        representation: jpeg
+        resolutions:
+          - resolution: "720p"
+            weight: 1
+  # Fresh per-step browser/desktop screenshot captured after the previous tool call
+  multimodal:
+    image:
+      count: { type: fixed, min: 1, max: 1, mean: 1 }
+      insertion_point: 0.0
+      representation: jpeg
+      resolutions:
+        - resolution: "720p"
+          weight: 1
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace

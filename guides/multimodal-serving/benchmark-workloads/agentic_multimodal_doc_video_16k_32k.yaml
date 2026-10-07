@@ -1,0 +1,93 @@
+# ---------------------------------------------------------------------------
+# Agentic Multimodal Workload 2A: Document / Video Analysis Agent (16K–32K Context)
+#
+# Models a Multimodal Document / Video Research Agent where each session
+# (shared_prefix group) ingests a 16-page PDF deck / 16-frame 720p video clip
+# once at the beginning of the trajectory, then executes 8 iterative tool/query
+# steps against that cached visual context:
+#   1. Shared Session Prefix (cached across all 8 steps of the agent trajectory):
+#      - 16 x 720p video frames / document pages emitted via `jpeg_frames`
+#        (~14.4K–17.2K visual tokens)
+#      - Extracted OCR/transcript + system instructions + tool schemas:
+#        lognormal text prefix (mean 6K tokens, range 2K–12K)
+#   2. Per-Step Agent Tool Result / Sub-Question (text-only suffix):
+#      - lognormal text suffix (mean 1.5K tokens, range 400–3.5K)
+#   3. Agent Analysis + Tool Call Output:
+#      - lognormal completion (mean 350 tokens, range 100–800)
+#
+# Total Prompt Length: ~23.5K tokens mean (16.8K–32.7K range), ~94% cacheable prefix.
+# Zero ViT encoding on repeat steps when routed with prefix-cache affinity!
+# Note: Ensure vLLM is launched with `--limit-mm-per-prompt '{"image": 32}'`.
+# ---------------------------------------------------------------------------
+load:
+  type: concurrent
+  num_workers: 16
+  worker_max_concurrency: 100
+  worker_max_tcp_connections: 2500
+  request_timeout: 600
+  stages:
+    - concurrency_level: 32
+      num_requests: 500
+    - concurrency_level: 64
+      num_requests: 640
+    - concurrency_level: 128
+      num_requests: 1024
+    - concurrency_level: 256
+      num_requests: 1536
+    - concurrency_level: 512
+      num_requests: 2048
+    - concurrency_level: 1000
+      num_requests: 3000
+api:
+  type: chat
+  streaming: true
+server:
+  type: vllm
+  model_name: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: REPLACE_ENV_LLMDBENCH_DEPLOY_CURRENT_MODEL
+data:
+  type: shared_prefix
+  shared_prefix:
+    seed: 42
+    num_groups: 500
+    num_prompts_per_group: 8
+    system_prompt_len:
+      type: lognormal
+      min: 2000
+      max: 12000
+      mean: 6000
+      std_dev: 2000
+    question_len:
+      type: lognormal
+      min: 400
+      max: 3500
+      mean: 1500
+      std_dev: 600
+    output_len:
+      type: lognormal
+      min: 100
+      max: 800
+      mean: 350
+      std_dev: 150
+    enable_multi_turn_chat: false
+    multimodal:
+      video:
+        count: { type: fixed, min: 1, max: 1, mean: 1 }
+        insertion_point: 0.0
+        representation: jpeg_frames
+        profiles:
+          - profile:
+              resolution: "720p"
+              frames: 16
+            weight: 1
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace

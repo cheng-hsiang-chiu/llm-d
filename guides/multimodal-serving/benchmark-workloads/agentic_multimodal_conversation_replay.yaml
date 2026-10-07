@@ -1,0 +1,85 @@
+load:
+  type: concurrent
+  num_workers: 16
+  worker_max_concurrency: 100
+  worker_max_tcp_connections: 2500
+  request_timeout: 600
+  stages:
+    - concurrency_level: 256
+      num_requests: 2560
+    - concurrency_level: 512
+      num_requests: 5120
+    - concurrency_level: 1000
+      num_requests: 10000
+api:
+  type: chat
+  streaming: true
+server:
+  type: vllm
+  model_name: moonshotai/Kimi-VL-A3B-Instruct
+  base_url: REPLACE_ENV_LLMDBENCH_HARNESS_STACK_ENDPOINT_URL
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: moonshotai/Kimi-VL-A3B-Instruct
+data:
+  type: conversation_replay
+  conversation_replay:
+    seed: 42
+    max_model_len: 65536
+    num_conversations: 1000
+    shared_system_prompt_len: 4000
+    dynamic_system_prompt_len:
+      type: lognormal
+      min: 1000
+      max: 4000
+      mean: 2000
+      std_dev: 500
+    turns_per_conversation:
+      type: lognormal
+      min: 6
+      max: 14
+      mean: 10
+      std_dev: 2
+    input_tokens_per_turn:
+      type: lognormal
+      min: 300
+      max: 2500
+      mean: 1000
+      std_dev: 400
+    output_tokens_per_turn:
+      type: lognormal
+      min: 64
+      max: 512
+      mean: 200
+      std_dev: 80
+    tool_call_latency_sec:
+      type: uniform
+      min: 1
+      max: 3
+      mean: 2
+    # Optional initial reference screens / PDF pages at Turn 0:
+    multimodal:
+      image:
+        count: { type: fixed, min: 2, max: 2, mean: 2 }
+        insertion_point: 0.0
+        representation: jpeg
+        resolutions:
+          - resolution: "720p"
+            weight: 1
+  # 1 fresh browser/GUI screenshot attached on EVERY turn (Turn 0..N-1):
+  multimodal:
+    image:
+      count: { type: fixed, min: 1, max: 1, mean: 1 }
+      insertion_point: 0.0
+      representation: jpeg
+      resolutions:
+        - resolution: "720p"
+          weight: 1
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+storage:
+  local_storage:
+    path: /workspace
